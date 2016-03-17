@@ -406,7 +406,10 @@ class Client
         $curl_options = array(
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_SSL_VERIFYPEER => true,
-            CURLOPT_CUSTOMREQUEST  => $http_method
+            CURLOPT_CUSTOMREQUEST  => $http_method,
+			CURLOPT_RETURNTRANSFER => true,
+			CURLOPT_HEADER => true,
+			CURLOPT_VERBOSE => true
         );
 
         switch($http_method) {
@@ -466,22 +469,47 @@ class Client
         if (!empty($this->curl_options)) {
             curl_setopt_array($ch, $this->curl_options);
         }
+
         $result = curl_exec($ch);
         $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $content_type = curl_getinfo($ch, CURLINFO_CONTENT_TYPE);
+		
+		// extract header and body
+		$header_size = curl_getinfo($ch, CURLINFO_HEADER_SIZE);
+		$result_header = substr($result, 0, $header_size); // setting the header content
+		$result_body = substr($result, $header_size); // setting the body content
+		
         if ($curl_error = curl_error($ch)) {
             throw new Exception($curl_error, Exception::CURL_ERROR);
         } else {
-            $json_decode = json_decode($result, true);
+            $json_decode = json_decode($result_body, true);
         }
+		
         curl_close($ch);
 
         return array(
-            'result' => (null === $json_decode) ? $result : $json_decode,
+            'result' => (null === $json_decode) ? $result_body : $json_decode,
             'code' => $http_code,
-            'content_type' => $content_type
+            'content_type' => $content_type,
+			'response_header' => $this->getHeaderArray($result_header)
         );
     }
+	
+	// build array from header result text
+	private function getHeaderArray($header_result) {
+		$headers = array();
+		foreach (explode("\r\n", $header_result) as $i => $line)
+			if ($i === 0)
+				$headers['http_code'] = $line;
+			else
+			{
+				list ($key, $value) = explode(': ', $line);
+				if($key!=="") {
+					$headers[$key] = $value;
+				}
+			}
+		return $headers;
+	}
 
     /**
      * Set the name of the parameter that carry the access token
